@@ -28,10 +28,15 @@ class TaskSorterApp:
             return
 
         self.task_items = tasks
-        self.sort_generator = interactive_merge_sort(self.task_items)
         self.current_step = 0
         self.estimated_steps = estimate_merge_sort_comparisons(len(self.task_items))
 
+        if self.estimated_steps == 0:
+            self.sort_generator = None
+            self.window.show_result_view(self.task_items)
+            return
+
+        self.sort_generator = interactive_merge_sort(self.task_items)
         self.window.show_comparison_view()
         self._advance_sorter()
 

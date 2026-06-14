@@ -11,8 +11,9 @@ A modern desktop application for prioritizing tasks using an interactive merge s
   - Green highlight for completed tasks
   - Strikethrough text for done items
   - Progress indicator during sorting
+- **Independent Completion Tracking**: Mark any result task as done in any order
 - **Auto-scroll**: Smooth scrolling for long task lists
-- **Help Dialog**: Quick reference for all keyboard shortcuts
+- **Help Dialog**: Compact help button and keyboard shortcut reference
 
 ## Installation
 
@@ -36,7 +37,7 @@ conda activate deskApp
 
 3. Install dependencies:
 ```bash
-pip install PyQt6
+pip install -r requirements.txt
 ```
 
 ## Usage
@@ -55,19 +56,27 @@ conda run -n deskApp python main.py
 
 ### Input View
 - **Ctrl+N**: Add new task
-- **Ctrl+Return**: Start sorting
+- **Ctrl+Enter**: Start sorting
 
 ### Comparison View
 - **Left Arrow**: Focus left button
 - **Right Arrow**: Focus right button
-- **Return / Enter**: Select focused task
+- **Enter**: Select focused task
 
 ### Result View
 - **Click checkbox**: Mark task as done (green highlight)
-- **Restart button**: Return to input view
+- **Restart button**: Go back to input view
 
 ### Global
-- **Shift+?**: Show keyboard shortcuts help
+- **F1**: Show keyboard shortcuts help
+- **? button**: Show keyboard shortcuts help
+
+## Tests
+
+Run the unit tests:
+```bash
+python -m unittest discover -s tests -p "*_tests.py"
+```
 
 ## Project Structure
 
@@ -76,6 +85,8 @@ conda run -n deskApp python main.py
 ├── main.py              # Application entry point and logic controller
 ├── ui_components.py     # PyQt6 UI components and widgets
 ├── sorter_logic.py      # Interactive merge sort generator algorithm
+├── requirements.txt     # Runtime Python dependencies
+├── tests/               # Unit tests for core logic
 └── README.md            # This file
 ```
 

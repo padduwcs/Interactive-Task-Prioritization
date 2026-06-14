@@ -1,6 +1,6 @@
 """PyQt6 UI components for the task prioritization application."""
 
-from PyQt6.QtGui import QAction, QFont, QKeySequence
+from PyQt6.QtGui import QAction, QKeySequence
 from PyQt6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -14,7 +14,6 @@ from PyQt6.QtWidgets import (
     QFrame,
     QCheckBox,
     QSizePolicy,
-    QDialog,
     QMessageBox,
 )
 from PyQt6.QtCore import Qt, QTimer
@@ -65,7 +64,7 @@ class ResultTaskWidget(QWidget):
 
     def _build_ui(self, sequence: int, task_text: str):
         self.main_container = QWidget()
-        self.main_container.setStyleSheet('background: white; border-radius: 12px; padding: 0px;')
+        self._set_completed_style(False)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(8, 6, 8, 6)
         layout.addWidget(self.main_container)
@@ -86,22 +85,29 @@ class ResultTaskWidget(QWidget):
         self.task_label.setMinimumHeight(40)
         container_layout.addWidget(self.task_label, stretch=1)
 
-        self.checkbox = QCheckBox()
+        self.checkbox = QCheckBox('Done')
+        self.checkbox.setObjectName('doneCheckbox')
         self.checkbox.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.checkbox.setMinimumWidth(24)
-        self.checkbox.stateChanged.connect(self._toggle_strikethrough)
+        self.checkbox.setMinimumWidth(86)
+        self.checkbox.toggled.connect(self._toggle_completed)
         container_layout.addWidget(self.checkbox, alignment=Qt.AlignmentFlag.AlignVCenter)
 
-    def _toggle_strikethrough(self, state: int):
+    def _toggle_completed(self, is_checked: bool):
         font = self.task_label.font()
-        is_checked = state == Qt.CheckState.Checked
         font.setStrikeOut(is_checked)
         self.task_label.setFont(font)
+        self.checkbox.setText('✓ Done' if is_checked else 'Done')
+        self._set_completed_style(is_checked)
 
+    def _set_completed_style(self, is_checked: bool):
         if is_checked:
-            self.main_container.setStyleSheet('background: #d1fae5; border-radius: 12px; padding: 0px;')
+            self.main_container.setStyleSheet(
+                'background: #d1fae5; border: 1px solid #10b981; border-radius: 12px; padding: 0px;'
+            )
         else:
-            self.main_container.setStyleSheet('background: white; border-radius: 12px; padding: 0px;')
+            self.main_container.setStyleSheet(
+                'background: white; border: 1px solid #cbd5e1; border-radius: 12px; padding: 0px;'
+            )
 
 
 class TaskSorterWindow(QWidget):
@@ -120,9 +126,23 @@ class TaskSorterWindow(QWidget):
         self.main_layout.setContentsMargins(24, 24, 24, 24)
         self.main_layout.setSpacing(18)
 
+        header_layout = QHBoxLayout()
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(12)
+
         self.title_label = QLabel('Interactive Task Prioritization')
         self.title_label.setObjectName('titleLabel')
-        self.main_layout.addWidget(self.title_label)
+        header_layout.addWidget(self.title_label, stretch=1)
+
+        self.help_button = QPushButton('?')
+        self.help_button.setObjectName('helpButton')
+        self.help_button.setToolTip('Keyboard shortcuts (F1)')
+        self.help_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.help_button.setFixedSize(34, 34)
+        self.help_button.clicked.connect(self.show_shortcuts_help)
+        header_layout.addWidget(self.help_button, alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop)
+
+        self.main_layout.addLayout(header_layout)
 
         self.description_label = QLabel(
             'Add tasks with optional multi-line descriptions, then sort them by priority through pairwise comparisons.'
@@ -184,7 +204,7 @@ class TaskSorterWindow(QWidget):
         layout.setSpacing(16)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        self.progress_label = QLabel('Comparison Step: 0 / ~0')
+        self.progress_label = QLabel('Comparison Step: 0 / 0')
         self.progress_label.setObjectName('progressLabel')
         layout.addWidget(self.progress_label, alignment=Qt.AlignmentFlag.AlignCenter)
 
@@ -289,6 +309,19 @@ class TaskSorterWindow(QWidget):
                 border-color: #93c5fd;
                 background: #f8fbff;
             }
+            QPushButton#helpButton {
+                background: white;
+                color: #1f2937;
+                border: 1px solid #d1d5db;
+                border-radius: 8px;
+                font-size: 16px;
+                font-weight: 800;
+                padding: 0px;
+            }
+            QPushButton#helpButton:hover {
+                border-color: #93c5fd;
+                background: #eff6ff;
+            }
             QLabel#progressLabel {
                 font-size: 15px;
                 font-weight: 700;
@@ -333,6 +366,27 @@ class TaskSorterWindow(QWidget):
                 font-size: 15px;
                 color: #111827;
             }
+            QCheckBox#doneCheckbox {
+                background: transparent;
+                color: #374151;
+                font-size: 13px;
+                font-weight: 700;
+                spacing: 8px;
+            }
+            QCheckBox#doneCheckbox::indicator {
+                width: 22px;
+                height: 22px;
+                border: 2px solid #6b7280;
+                border-radius: 6px;
+                background: white;
+            }
+            QCheckBox#doneCheckbox::indicator:hover {
+                border-color: #2563eb;
+            }
+            QCheckBox#doneCheckbox::indicator:checked {
+                background: #16a34a;
+                border-color: #15803d;
+            }
             """
         )
 
@@ -341,13 +395,18 @@ class TaskSorterWindow(QWidget):
 
         new_task_action = QAction(self)
         new_task_action.setShortcut(QKeySequence('Ctrl+N'))
-        new_task_action.triggered.connect(lambda: self.add_task_input(True))
+        new_task_action.triggered.connect(self.add_task_input_from_shortcut)
         self.addAction(new_task_action)
 
         start_sort_action = QAction(self)
         start_sort_action.setShortcut(QKeySequence('Ctrl+Return'))
-        start_sort_action.triggered.connect(self.start_button.click)
+        start_sort_action.triggered.connect(self.start_sort_from_shortcut)
         self.addAction(start_sort_action)
+
+        start_sort_enter_action = QAction(self)
+        start_sort_enter_action.setShortcut(QKeySequence('Ctrl+Enter'))
+        start_sort_enter_action.triggered.connect(self.start_sort_from_shortcut)
+        self.addAction(start_sort_enter_action)
 
         left_action = QAction(self)
         left_action.setShortcut(QKeySequence(Qt.Key.Key_Left))
@@ -369,12 +428,13 @@ class TaskSorterWindow(QWidget):
         numpad_enter_action.triggered.connect(self.select_focused_button)
         self.addAction(numpad_enter_action)
 
-        help_action = QAction(self)
-        help_action.setShortcut(QKeySequence('Shift+?'))
-        help_action.triggered.connect(self.show_shortcuts_help)
-        self.addAction(help_action)
+        f1_help_action = QAction(self)
+        f1_help_action.setShortcut(QKeySequence(Qt.Key.Key_F1))
+        f1_help_action.triggered.connect(self.show_shortcuts_help)
+        self.addAction(f1_help_action)
 
     def add_task_input(self, focus_text: bool = True):
+        self.reset_input_hint()
         index = len(self.task_inputs) + 1
         task_widget = TaskInputWidget(index)
         self.task_inputs.append(task_widget)
@@ -396,6 +456,19 @@ class TaskSorterWindow(QWidget):
 
     def set_input_hint(self, message: str):
         self.description_label.setText(message)
+
+    def reset_input_hint(self):
+        self.description_label.setText(
+            'Add tasks with optional multi-line descriptions, then sort them by priority through pairwise comparisons.'
+        )
+
+    def add_task_input_from_shortcut(self):
+        if self.input_widget.isVisible():
+            self.add_task_input(True)
+
+    def start_sort_from_shortcut(self):
+        if self.input_widget.isVisible():
+            self.start_button.click()
 
     def show_comparison_view(self):
         self.input_widget.setVisible(False)
@@ -420,7 +493,7 @@ class TaskSorterWindow(QWidget):
             self.result_list.scrollToTop()
 
     def update_progress(self, current_step: int, total_steps: int):
-        self.progress_label.setText(f'Comparison Step: {current_step} / ~{total_steps}')
+        self.progress_label.setText(f'Comparison Step: {current_step} / {total_steps}')
 
     def update_comparison_pair(self, task_a, task_b):
         self.button_a.task = task_a
@@ -447,9 +520,7 @@ class TaskSorterWindow(QWidget):
             self.button_b.click()
 
     def reset(self):
-        self.description_label.setText(
-            'Add tasks with optional multi-line descriptions, then sort them by priority through pairwise comparisons.'
-        )
+        self.reset_input_hint()
         self.comparison_widget.setVisible(False)
         self.result_widget.setVisible(False)
         self.input_widget.setVisible(True)
@@ -462,25 +533,28 @@ class TaskSorterWindow(QWidget):
             widget.setParent(None)
             widget.deleteLater()
 
-    def show_shortcuts_help(self):
-        shortcuts_text = """
+    def shortcuts_help_text(self) -> str:
+        return """
 <b>Keyboard Shortcuts</b><br><br>
 <b>Input View:</b><br>
 • <b>Ctrl+N</b> - Add new task<br>
-• <b>Ctrl+Return</b> - Start sorting<br>
+• <b>Ctrl+Enter</b> - Start sorting<br>
 <br>
 <b>Comparison View:</b><br>
 • <b>Left Arrow</b> - Focus left button<br>
 • <b>Right Arrow</b> - Focus right button<br>
-• <b>Return / Enter</b> - Select focused task<br>
+• <b>Enter</b> - Select focused task<br>
 <br>
 <b>Result View:</b><br>
 • <b>Click checkbox</b> - Mark task as done (green highlight)<br>
-• <b>Restart button</b> - Return to input view<br>
+• <b>Restart button</b> - Go back to input view<br>
 <br>
 <b>Global:</b><br>
-• <b>?</b> - Show this help dialog
+• <b>F1</b> - Show this help dialog
         """
+
+    def show_shortcuts_help(self):
+        shortcuts_text = self.shortcuts_help_text()
         msg = QMessageBox(self)
         msg.setWindowTitle('Keyboard Shortcuts')
         msg.setText(shortcuts_text)
