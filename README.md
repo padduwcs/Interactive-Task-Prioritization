@@ -78,6 +78,18 @@ Run the unit tests:
 python -m unittest discover -s tests -p "*_tests.py"
 ```
 
+## Build Windows App
+
+Build the desktop app executable with the bundled icon:
+```bash
+pyinstaller "First Things First.spec"
+```
+
+The executable is generated at:
+```text
+dist/First Things First/First Things First.exe
+```
+
 ## Project Structure
 
 ```
@@ -85,6 +97,7 @@ python -m unittest discover -s tests -p "*_tests.py"
 ├── main.py              # Application entry point and logic controller
 ├── ui_components.py     # PyQt6 UI components and widgets
 ├── sorter_logic.py      # Interactive merge sort generator algorithm
+├── First Things First.spec # PyInstaller Windows build configuration
 ├── requirements.txt     # Runtime Python dependencies
 ├── tests/               # Unit tests for core logic
 └── README.md            # This file

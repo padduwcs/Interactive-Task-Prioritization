@@ -1,13 +1,29 @@
 import sys
+from pathlib import Path
+from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication
 
 from sorter_logic import interactive_merge_sort, estimate_merge_sort_comparisons
 from ui_components import TaskSorterWindow
 
 
+def resource_path(relative_path: str) -> Path:
+    base_path = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent))
+    return base_path / relative_path
+
+
+def load_app_icon() -> QIcon:
+    icon_path = resource_path('app_icon.ico')
+    if icon_path.exists():
+        return QIcon(str(icon_path))
+    return QIcon()
+
+
 class TaskSorterApp:
-    def __init__(self):
+    def __init__(self, app_icon: QIcon | None = None):
         self.window = TaskSorterWindow()
+        if app_icon is not None and not app_icon.isNull():
+            self.window.setWindowIcon(app_icon)
         self.sort_generator = None
         self.current_step = 0
         self.estimated_steps = 0
@@ -72,7 +88,10 @@ class TaskSorterApp:
 
 def main():
     app = QApplication(sys.argv)
-    sorter_app = TaskSorterApp()
+    app_icon = load_app_icon()
+    if not app_icon.isNull():
+        app.setWindowIcon(app_icon)
+    sorter_app = TaskSorterApp(app_icon)
     sorter_app.run()
     sys.exit(app.exec())
 
