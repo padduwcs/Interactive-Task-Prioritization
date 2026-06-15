@@ -2,6 +2,9 @@
 
 from PyQt6.QtGui import QAction, QKeySequence
 from PyQt6.QtWidgets import (
+    QApplication,
+    QDialog,
+    QDialogButtonBox,
     QWidget,
     QVBoxLayout,
     QHBoxLayout,
@@ -16,7 +19,7 @@ from PyQt6.QtWidgets import (
     QSizePolicy,
     QMessageBox,
 )
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt, QTimer, QSize, pyqtSignal
 
 
 class TaskInputWidget(QFrame):
@@ -58,12 +61,15 @@ class TaskInputWidget(QFrame):
 
 
 class ResultTaskWidget(QWidget):
-    def __init__(self, sequence: int, task_text: str):
+    def __init__(self, sequence: int, task_text: str, is_done: bool = False):
         super().__init__()
         self._build_ui(sequence, task_text)
+        if is_done:
+            self.checkbox.setChecked(True)
 
     def _build_ui(self, sequence: int, task_text: str):
         self.main_container = QWidget()
+        self.main_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
         self._set_completed_style(False)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(8, 6, 8, 6)
@@ -83,14 +89,53 @@ class ResultTaskWidget(QWidget):
         self.task_label.setObjectName('resultTaskLabel')
         self.task_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.task_label.setMinimumHeight(40)
+        self.task_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+        self.task_label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
         container_layout.addWidget(self.task_label, stretch=1)
+
+        self.copy_button = QPushButton('Copy')
+        self.copy_button.setObjectName('smallActionButton')
+        self.copy_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.copy_button.setFixedHeight(34)
+        self.copy_button.setMinimumWidth(72)
+
+        self.edit_button = QPushButton('Edit')
+        self.edit_button.setObjectName('smallActionButton')
+        self.edit_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.edit_button.setFixedHeight(34)
+        self.edit_button.setMinimumWidth(72)
 
         self.checkbox = QCheckBox('Done')
         self.checkbox.setObjectName('doneCheckbox')
         self.checkbox.setCursor(Qt.CursorShape.PointingHandCursor)
         self.checkbox.setMinimumWidth(86)
         self.checkbox.toggled.connect(self._toggle_completed)
-        container_layout.addWidget(self.checkbox, alignment=Qt.AlignmentFlag.AlignVCenter)
+
+        action_layout = QHBoxLayout()
+        action_layout.setContentsMargins(0, 0, 0, 0)
+        action_layout.setSpacing(8)
+        action_layout.addWidget(self.copy_button)
+        action_layout.addWidget(self.edit_button)
+        action_layout.addWidget(self.checkbox)
+        container_layout.addLayout(action_layout)
+
+    def task_text(self) -> str:
+        return self.task_label.text()
+
+    def set_task_text(self, task_text: str):
+        self.task_label.setText(task_text)
+
+    def preferred_height(self, available_width: int) -> int:
+        text_width = max(180, available_width - 260)
+        text_rect = self.task_label.fontMetrics().boundingRect(
+            0,
+            0,
+            text_width,
+            100000,
+            int(Qt.TextFlag.TextWordWrap),
+            self.task_text(),
+        )
+        return max(82, text_rect.height() + 48)
 
     def _toggle_completed(self, is_checked: bool):
         font = self.task_label.font()
@@ -111,11 +156,15 @@ class ResultTaskWidget(QWidget):
 
 
 class TaskSorterWindow(QWidget):
+    result_completion_changed = pyqtSignal(int, bool)
+    result_text_changed = pyqtSignal(int, str)
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle('Task Prioritization')
         self.setMinimumSize(820, 720)
         self.task_inputs = []
+        self.result_items = []
         self._build_ui()
         self._apply_styles()
         self._setup_shortcuts()
@@ -238,11 +287,24 @@ class TaskSorterWindow(QWidget):
         self.result_list.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerPixel)
         layout.addWidget(self.result_list)
 
+        result_buttons_layout = QHBoxLayout()
+        result_buttons_layout.setContentsMargins(0, 0, 0, 0)
+        result_buttons_layout.setSpacing(12)
+        result_buttons_layout.addStretch()
+
+        self.copy_all_button = QPushButton('Copy All')
+        self.copy_all_button.setObjectName('secondaryButton')
+        self.copy_all_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.copy_all_button.setFixedHeight(48)
+        self.copy_all_button.clicked.connect(self.copy_all_results)
+        result_buttons_layout.addWidget(self.copy_all_button)
+
         self.restart_button = QPushButton('Restart')
         self.restart_button.setObjectName('secondaryButton')
         self.restart_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.restart_button.setFixedHeight(48)
-        layout.addWidget(self.restart_button, alignment=Qt.AlignmentFlag.AlignRight)
+        result_buttons_layout.addWidget(self.restart_button)
+        layout.addLayout(result_buttons_layout)
 
     def _apply_styles(self):
         self.setStyleSheet(
@@ -308,6 +370,19 @@ class TaskSorterWindow(QWidget):
             QPushButton#secondaryButton:hover {
                 border-color: #93c5fd;
                 background: #f8fbff;
+            }
+            QPushButton#smallActionButton {
+                background: #eff6ff;
+                color: #1f2937;
+                border: 1px solid #bfdbfe;
+                border-radius: 10px;
+                font-size: 12px;
+                font-weight: 700;
+                padding: 0 10px;
+            }
+            QPushButton#smallActionButton:hover {
+                background: #dbeafe;
+                border-color: #60a5fa;
             }
             QPushButton#helpButton {
                 background: white;
@@ -476,21 +551,81 @@ class TaskSorterWindow(QWidget):
         self.result_widget.setVisible(False)
         self.button_a.setFocus()
 
-    def show_result_view(self, sorted_tasks: list[tuple[int, str]]):
+    def show_result_view(self, sorted_tasks: list[tuple[int, str]], done_states: list[bool] | None = None):
         self.comparison_widget.setVisible(False)
         self.input_widget.setVisible(False)
         self.result_widget.setVisible(True)
         self.result_list.clear()
+        self.result_items = []
+        done_states = done_states or []
 
         for sequence, task in enumerate(sorted_tasks, start=1):
-            row_widget = ResultTaskWidget(sequence, task[1])
+            result_index = sequence - 1
+            is_done = bool(done_states[result_index]) if result_index < len(done_states) else False
+            row_widget = ResultTaskWidget(sequence, task[1], is_done)
+            row_widget.copy_button.clicked.connect(lambda _, row=row_widget: self.copy_result_task(row))
+            row_widget.edit_button.clicked.connect(
+                lambda _, index=result_index, row=row_widget: self.edit_result_task(index, row)
+            )
+            row_widget.checkbox.toggled.connect(
+                lambda checked, index=result_index: self.result_completion_changed.emit(index, checked)
+            )
             item = QListWidgetItem(self.result_list)
-            item.setSizeHint(row_widget.sizeHint())
             self.result_list.addItem(item)
             self.result_list.setItemWidget(item, row_widget)
+            self.result_items.append((item, row_widget))
+
+        self.update_result_item_sizes()
+        QTimer.singleShot(0, self.update_result_item_sizes)
         
         if self.result_list.count() > 0:
             self.result_list.scrollToTop()
+
+    def copy_result_task(self, row_widget: ResultTaskWidget):
+        QApplication.clipboard().setText(row_widget.task_text())
+
+    def copy_all_results(self):
+        task_texts = []
+        for index, (_, row_widget) in enumerate(self.result_items, start=1):
+            task_texts.append(f'{index}. {row_widget.task_text()}')
+
+        QApplication.clipboard().setText('\n\n'.join(task_texts))
+
+    def edit_result_task(self, index: int, row_widget: ResultTaskWidget):
+        dialog = QDialog(self)
+        dialog.setWindowTitle('Edit Task')
+        dialog.setMinimumSize(520, 360)
+
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(18, 18, 18, 18)
+        layout.setSpacing(12)
+
+        text_edit = QTextEdit()
+        text_edit.setPlainText(row_widget.task_text())
+        text_edit.setObjectName('taskTextEdit')
+        layout.addWidget(text_edit)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        updated_text = text_edit.toPlainText().strip()
+        if not updated_text:
+            QMessageBox.warning(self, 'Task is empty', 'Please keep at least some content for this task.')
+            return
+
+        row_widget.set_task_text(updated_text)
+        self.result_text_changed.emit(index, updated_text)
+        self.update_result_item_sizes()
+
+    def update_result_item_sizes(self):
+        available_width = self.result_list.viewport().width()
+        for item, row_widget in self.result_items:
+            item.setSizeHint(QSize(0, row_widget.preferred_height(available_width)))
 
     def update_progress(self, current_step: int, total_steps: int):
         self.progress_label.setText(f'Comparison Step: {current_step} / {total_steps}')
@@ -547,6 +682,9 @@ class TaskSorterWindow(QWidget):
 <br>
 <b>Result View:</b><br>
 • <b>Click checkbox</b> - Mark task as done (green highlight)<br>
+• <b>Copy</b> - Copy one task<br>
+• <b>Edit</b> - Edit one task and save it automatically<br>
+• <b>Copy All</b> - Copy every task as a numbered list<br>
 • <b>Restart button</b> - Go back to input view<br>
 <br>
 <b>Global:</b><br>
@@ -582,3 +720,8 @@ class TaskSorterWindow(QWidget):
             """
         )
         msg.exec()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if self.result_widget.isVisible():
+            self.update_result_item_sizes()

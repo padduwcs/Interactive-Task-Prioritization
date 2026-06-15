@@ -57,6 +57,51 @@ class TaskSorterWindowTests(unittest.TestCase):
         self.assertNotIn('Shift+?', help_text)
         self.assertNotIn('Return', help_text)
 
+    def test_result_view_restores_done_state_and_emits_changes(self):
+        window = TaskSorterWindow()
+        events = []
+        window.result_completion_changed.connect(lambda index, checked: events.append((index, checked)))
+
+        window.show_result_view([(0, 'First task'), (1, 'Second task')], [False, True])
+        self.app.processEvents()
+
+        first_widget = window.result_list.itemWidget(window.result_list.item(0))
+        second_widget = window.result_list.itemWidget(window.result_list.item(1))
+        self.assertFalse(first_widget.checkbox.isChecked())
+        self.assertTrue(second_widget.checkbox.isChecked())
+        self.assertEqual(events, [])
+
+        first_widget.checkbox.setChecked(True)
+        self.app.processEvents()
+
+        self.assertEqual(events, [(0, True)])
+
+    def test_result_view_has_copy_edit_and_copy_all_actions(self):
+        window = TaskSorterWindow()
+        window.show_result_view([(0, 'First task'), (1, 'Second task\nWith details')], [False, False])
+        self.app.processEvents()
+
+        first_widget = window.result_list.itemWidget(window.result_list.item(0))
+        self.assertEqual(first_widget.copy_button.text(), 'Copy')
+        self.assertEqual(first_widget.edit_button.text(), 'Edit')
+        self.assertEqual(window.copy_all_button.text(), 'Copy All')
+
+        self.app.clipboard().clear()
+        first_widget.copy_button.click()
+        self.assertEqual(self.app.clipboard().text(), 'First task')
+
+        window.copy_all_button.click()
+        self.assertEqual(self.app.clipboard().text(), '1. First task\n\n2. Second task\nWith details')
+
+    def test_result_items_expand_for_long_content(self):
+        window = TaskSorterWindow()
+        long_task = 'Important task ' + ('with more details ' * 40)
+
+        window.show_result_view([(0, long_task)], [False])
+        self.app.processEvents()
+
+        self.assertGreater(window.result_list.item(0).sizeHint().height(), 82)
+
 
 if __name__ == '__main__':
     unittest.main()

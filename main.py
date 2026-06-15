@@ -4,6 +4,7 @@ from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication
 
 from sorter_logic import interactive_merge_sort, estimate_merge_sort_comparisons
+from state_store import TaskStateStore
 from ui_components import TaskSorterWindow
 
 
@@ -20,14 +21,18 @@ def load_app_icon() -> QIcon:
 
 
 class TaskSorterApp:
-    def __init__(self, app_icon: QIcon | None = None):
+    def __init__(self, app_icon: QIcon | None = None, state_store: TaskStateStore | None = None):
         self.window = TaskSorterWindow()
         if app_icon is not None and not app_icon.isNull():
             self.window.setWindowIcon(app_icon)
+        self.state_store = state_store or TaskStateStore()
         self.sort_generator = None
         self.current_step = 0
         self.estimated_steps = 0
+        self.result_tasks = []
+        self.result_done_states = []
         self._connect_signals()
+        self._restore_saved_state()
 
     def _connect_signals(self):
         self.window.add_task_button.clicked.connect(self.window.add_task_input)
@@ -35,6 +40,8 @@ class TaskSorterApp:
         self.window.restart_button.clicked.connect(self._on_restart)
         self.window.button_a.clicked.connect(lambda: self._on_task_chosen(self.window.button_a.task))
         self.window.button_b.clicked.connect(lambda: self._on_task_chosen(self.window.button_b.task))
+        self.window.result_completion_changed.connect(self._on_result_completion_changed)
+        self.window.result_text_changed.connect(self._on_result_text_changed)
 
     def _on_start_sort(self):
         tasks = self.window.gather_tasks()
@@ -49,7 +56,7 @@ class TaskSorterApp:
 
         if self.estimated_steps == 0:
             self.sort_generator = None
-            self.window.show_result_view(self.task_items)
+            self._show_result(self.task_items)
             return
 
         self.sort_generator = interactive_merge_sort(self.task_items)
@@ -69,7 +76,7 @@ class TaskSorterApp:
 
         except StopIteration as stop:
             sorted_tasks = stop.value
-            self.window.show_result_view(sorted_tasks)
+            self._show_result(sorted_tasks)
 
     def _on_task_chosen(self, chosen_task):
         if self.sort_generator is None:
@@ -80,7 +87,50 @@ class TaskSorterApp:
         self.sort_generator = None
         self.current_step = 0
         self.estimated_steps = 0
+        self.result_tasks = []
+        self.result_done_states = []
+        self.state_store.delete()
         self.window.reset()
+
+    def _on_result_completion_changed(self, index: int, is_done: bool):
+        if index < 0 or index >= len(self.result_done_states):
+            return
+
+        self.result_done_states[index] = is_done
+        self.state_store.save_result(self.result_tasks, self.result_done_states)
+
+    def _on_result_text_changed(self, index: int, task_text: str):
+        if index < 0 or index >= len(self.result_tasks):
+            return
+
+        original_index = self.result_tasks[index][0]
+        self.result_tasks[index] = (original_index, task_text)
+        self.state_store.save_result(self.result_tasks, self.result_done_states)
+
+    def _show_result(self, sorted_tasks: list[tuple[int, str]], done_states: list[bool] | None = None, persist: bool = True):
+        self.result_tasks = list(sorted_tasks)
+        self.result_done_states = (
+            list(done_states)
+            if done_states is not None
+            else [False for _ in self.result_tasks]
+        )
+        self.window.show_result_view(self.result_tasks, self.result_done_states)
+
+        if persist:
+            self.state_store.save_result(self.result_tasks, self.result_done_states)
+
+    def _restore_saved_state(self):
+        state = self.state_store.load()
+        if not state:
+            return
+
+        saved_tasks = state.get('sorted_tasks', [])
+        if not saved_tasks:
+            return
+
+        sorted_tasks = [(index, item['text']) for index, item in enumerate(saved_tasks)]
+        done_states = [bool(item.get('done', False)) for item in saved_tasks]
+        self._show_result(sorted_tasks, done_states, persist=False)
 
     def run(self):
         self.window.show()
