@@ -6,7 +6,13 @@ os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 from PyQt6.QtWidgets import QApplication, QAbstractItemView
 from PyQt6.QtCore import QModelIndex, Qt
 
-from ui_components import ResultTaskWidget, SmoothResultListWidget, TaskInputWidget, TaskSorterWindow
+from ui_components import (
+    MarkdownDisplayButton,
+    ResultTaskWidget,
+    SmoothResultListWidget,
+    TaskInputWidget,
+    TaskSorterWindow,
+)
 
 
 def get_app():
@@ -27,6 +33,39 @@ class TaskInputWidgetTests(unittest.TestCase):
 
         widget.text_edit.setPlainText('Task title\nMore detail')
         self.assertEqual(widget.get_text(), 'Task title\nMore detail')
+
+    def test_markdown_input_previews_rendered_text_and_restores_source_for_editing(self):
+        widget = TaskInputWidget(1)
+        markdown_source = '## Important\n\n- **Do this** first'
+
+        widget.text_edit.setPlainText(markdown_source)
+        self.assertEqual(widget.get_text(), markdown_source)
+
+        widget.text_edit.render_preview()
+
+        self.assertEqual(widget.text_edit.markdown_source(), markdown_source)
+        self.assertIn('Important', widget.text_edit.toPlainText())
+        self.assertNotIn('##', widget.text_edit.toPlainText())
+        self.assertNotIn('**', widget.text_edit.toPlainText())
+
+        widget.text_edit.show_source_for_editing()
+
+        self.assertEqual(widget.text_edit.toPlainText(), markdown_source)
+
+
+class MarkdownDisplayButtonTests(unittest.TestCase):
+    def setUp(self):
+        self.app = get_app()
+
+    def test_comparison_button_renders_markdown_but_keeps_source_text(self):
+        button = MarkdownDisplayButton()
+        markdown_source = '**Task A**\n\n- one\n- two'
+
+        button.setText(markdown_source)
+
+        self.assertEqual(button.text(), markdown_source)
+        self.assertIn('Task A', button.text_view.toPlainText())
+        self.assertNotIn('**', button.text_view.toPlainText())
 
 
 class ResultTaskWidgetTests(unittest.TestCase):
@@ -59,6 +98,15 @@ class ResultTaskWidgetTests(unittest.TestCase):
         narrow_height = widget.preferred_height(180)
 
         self.assertGreater(narrow_height, wide_height)
+
+    def test_result_task_renders_markdown_but_keeps_source_text(self):
+        markdown_source = '# Result\n\n- **Done** item'
+        widget = ResultTaskWidget(1, markdown_source)
+
+        self.assertEqual(widget.task_text(), markdown_source)
+        self.assertIn('Result', widget.task_label.toPlainText())
+        self.assertNotIn('#', widget.task_label.toPlainText())
+        self.assertNotIn('**', widget.task_label.toPlainText())
 
 
 class SmoothResultListWidgetTests(unittest.TestCase):

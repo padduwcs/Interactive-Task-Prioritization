@@ -28,6 +28,115 @@ from PyQt6.QtCore import Qt, QTimer, QSize, pyqtSignal
 from theme_design import THEMES
 
 
+def render_markdown(text_edit: QTextEdit, markdown_source: str):
+    if hasattr(text_edit, 'setMarkdown'):
+        text_edit.setMarkdown(markdown_source)
+    else:
+        text_edit.setPlainText(markdown_source)
+
+
+class MarkdownTaskEditor(QTextEdit):
+    def __init__(self):
+        super().__init__()
+        self._markdown_source = ''
+        self._editing_source = True
+        self.setAcceptRichText(False)
+        self.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
+
+    def markdown_source(self) -> str:
+        if self._editing_source:
+            self._markdown_source = self.toPlainText()
+        return self._markdown_source
+
+    def set_markdown_source(self, markdown_source: str):
+        self._markdown_source = markdown_source
+        if self._editing_source:
+            self.setPlainText(markdown_source)
+        else:
+            self.render_preview()
+
+    def focusInEvent(self, event):
+        self.show_source_for_editing()
+        super().focusInEvent(event)
+
+    def focusOutEvent(self, event):
+        self._markdown_source = self.toPlainText().strip()
+        super().focusOutEvent(event)
+        if self._markdown_source:
+            self.render_preview()
+
+    def show_source_for_editing(self):
+        if self._editing_source:
+            return
+
+        self._editing_source = True
+        self.setReadOnly(False)
+        self.setPlainText(self._markdown_source)
+        cursor = self.textCursor()
+        cursor.movePosition(cursor.MoveOperation.End)
+        self.setTextCursor(cursor)
+
+    def render_preview(self):
+        self._editing_source = False
+        self.setReadOnly(True)
+        render_markdown(self, self._markdown_source)
+
+
+class MarkdownDisplayButton(QFrame):
+    clicked = pyqtSignal()
+
+    def __init__(self, text: str = ''):
+        super().__init__()
+        self.task = None
+        self._markdown_source = ''
+        self.setObjectName('comparisonButton')
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 18, 20, 18)
+        layout.setSpacing(0)
+
+        self.text_view = QTextEdit()
+        self.text_view.setObjectName('comparisonTaskText')
+        self.text_view.setReadOnly(True)
+        self.text_view.setFrameShape(QFrame.Shape.NoFrame)
+        self.text_view.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.text_view.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.text_view.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.text_view.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
+        layout.addWidget(self.text_view)
+
+        self.setText(text)
+
+    def setText(self, text: str):
+        self._markdown_source = text
+        render_markdown(self.text_view, text)
+
+    def text(self) -> str:
+        return self._markdown_source
+
+    def click(self):
+        self.clicked.emit()
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and self.rect().contains(event.position().toPoint()):
+            self.clicked.emit()
+            event.accept()
+            return
+
+        super().mouseReleaseEvent(event)
+
+    def keyPressEvent(self, event):
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space):
+            self.clicked.emit()
+            event.accept()
+            return
+
+        super().keyPressEvent(event)
+
+
 class TaskInputWidget(QFrame):
     def __init__(self, task_number: int):
         super().__init__()
@@ -49,7 +158,7 @@ class TaskInputWidget(QFrame):
         self.index_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.index_label, alignment=Qt.AlignmentFlag.AlignTop)
 
-        self.text_edit = QTextEdit()
+        self.text_edit = MarkdownTaskEditor()
         self.text_edit.setPlaceholderText('Task title and description...')
         self.text_edit.setObjectName('taskInputTextEdit')
         self.text_edit.setMinimumHeight(92)
@@ -61,7 +170,7 @@ class TaskInputWidget(QFrame):
         self.index_label.setText(str(value))
 
     def get_text(self) -> str:
-        return self.text_edit.toPlainText().strip()
+        return self.text_edit.markdown_source().strip()
 
     def focus_text(self):
         self.text_edit.setFocus()
@@ -113,6 +222,7 @@ class ResultTaskWidget(QFrame):
     def __init__(self, sequence: int, task_text: str, is_done: bool = False, task_id: int | None = None):
         super().__init__()
         self.task_id = task_id if task_id is not None else sequence - 1
+        self._task_markdown = task_text
         self._build_ui(sequence, task_text)
         if is_done:
             self.checkbox.setChecked(True)
@@ -164,21 +274,23 @@ class ResultTaskWidget(QFrame):
         layout.addLayout(header_layout)
 
         self.task_label = QTextEdit()
-        self.task_label.setPlainText(task_text)
         self.task_label.setReadOnly(True)
         self.task_label.setFrameShape(QFrame.Shape.NoFrame)
         self.task_label.setObjectName('resultTaskLabel')
         self.task_label.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.task_label.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.task_label.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
         self.task_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
         self.task_label.setMinimumHeight(42)
+        render_markdown(self.task_label, task_text)
         layout.addWidget(self.task_label)
 
     def task_text(self) -> str:
-        return self.task_label.toPlainText()
+        return self._task_markdown
 
     def set_task_text(self, task_text: str):
-        self.task_label.setPlainText(task_text)
+        self._task_markdown = task_text
+        render_markdown(self.task_label, task_text)
 
     def set_sequence(self, sequence: int):
         self.index_label.setText(str(sequence))
@@ -424,14 +536,11 @@ class TaskSorterWindow(QWidget):
         button_row = QHBoxLayout()
         button_row.setSpacing(16)
 
-        self.button_a = QPushButton('Task A')
-        self.button_b = QPushButton('Task B')
+        self.button_a = MarkdownDisplayButton('Task A')
+        self.button_b = MarkdownDisplayButton('Task B')
         for button in (self.button_a, self.button_b):
-            button.setObjectName('comparisonButton')
-            button.setCursor(Qt.CursorShape.PointingHandCursor)
             button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
             button.setMinimumHeight(180)
-            button.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
             button_row.addWidget(button)
 
         layout.addLayout(button_row)
@@ -607,23 +716,42 @@ class TaskSorterWindow(QWidget):
                 font-weight: 700;
                 color: $text;
             }
-            QPushButton#comparisonButton {
+            QFrame#comparisonButton {
                 background: $surface;
                 color: $text;
                 border: 2px solid $comparison_border;
                 border-radius: 20px;
-                font-size: 16px;
-                font-weight: 700;
-                padding: 22px;
-                text-align: left;
             }
-            QPushButton#comparisonButton:hover {
+            QFrame#comparisonButton:hover {
                 border-color: $comparison_hover;
             }
-            QPushButton#comparisonButton:focus {
+            QFrame#comparisonButton:focus {
                 border-color: $focus;
                 outline: none;
                 border-width: 3px;
+            }
+            QTextEdit#comparisonTaskText {
+                background: transparent;
+                color: $text;
+                border: none;
+                font-size: 15px;
+                selection-background-color: $primary;
+                selection-color: $primary_text;
+            }
+            QTextEdit#comparisonTaskText QScrollBar:vertical {
+                background: transparent;
+                width: 10px;
+                margin: 0px;
+            }
+            QTextEdit#comparisonTaskText QScrollBar::handle:vertical {
+                background: $drag_handle;
+                border-radius: 5px;
+                min-height: 28px;
+            }
+            QTextEdit#comparisonTaskText QScrollBar::add-line:vertical,
+            QTextEdit#comparisonTaskText QScrollBar::sub-line:vertical {
+                height: 0px;
+                background: transparent;
             }
             QListWidget#resultList {
                 background: transparent;
