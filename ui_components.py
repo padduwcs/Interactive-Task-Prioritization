@@ -1,5 +1,8 @@
 """PyQt6 UI components for the task prioritization application."""
 
+from math import ceil
+from string import Template
+
 from PyQt6.QtGui import QAction, QKeySequence
 from PyQt6.QtWidgets import (
     QApplication,
@@ -22,6 +25,8 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QTimer, QSize, pyqtSignal
 
+from theme_design import THEMES
+
 
 class TaskInputWidget(QFrame):
     def __init__(self, task_number: int):
@@ -31,22 +36,23 @@ class TaskInputWidget(QFrame):
         self.setObjectName('taskInputFrame')
 
     def _build_ui(self):
-        self.setFrameShape(QFrame.Shape.StyledPanel)
-        self.setFrameShadow(QFrame.Shadow.Raised)
-        self.setStyleSheet('background: white; border-radius: 16px;')
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(18, 16, 18, 16)
-        layout.setSpacing(10)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(12)
 
         self.index_label = QLabel(str(self.task_number))
         self.index_label.setObjectName('taskIndexLabel')
-        layout.addWidget(self.index_label)
+        self.index_label.setFixedSize(34, 34)
+        self.index_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.index_label, alignment=Qt.AlignmentFlag.AlignTop)
 
         self.text_edit = QTextEdit()
         self.text_edit.setPlaceholderText('Task title and description...')
-        self.text_edit.setObjectName('taskTextEdit')
-        self.text_edit.setMinimumHeight(110)
+        self.text_edit.setObjectName('taskInputTextEdit')
+        self.text_edit.setMinimumHeight(92)
         self.text_edit.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         layout.addWidget(self.text_edit)
 
@@ -157,37 +163,45 @@ class ResultTaskWidget(QFrame):
         header_layout.addWidget(self.checkbox)
         layout.addLayout(header_layout)
 
-        self.task_label = QLabel(task_text)
-        self.task_label.setWordWrap(True)
+        self.task_label = QTextEdit()
+        self.task_label.setPlainText(task_text)
+        self.task_label.setReadOnly(True)
+        self.task_label.setFrameShape(QFrame.Shape.NoFrame)
         self.task_label.setObjectName('resultTaskLabel')
-        self.task_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.task_label.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.task_label.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.task_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
-        self.task_label.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
-        self.task_label.setContentsMargins(2, 0, 2, 0)
+        self.task_label.setMinimumHeight(42)
         layout.addWidget(self.task_label)
 
     def task_text(self) -> str:
-        return self.task_label.text()
+        return self.task_label.toPlainText()
 
     def set_task_text(self, task_text: str):
-        self.task_label.setText(task_text)
+        self.task_label.setPlainText(task_text)
 
     def set_sequence(self, sequence: int):
         self.index_label.setText(str(sequence))
 
-    def preferred_height(self, available_width: int) -> int:
-        text_width = max(220, available_width - 44)
-        label_height = self.task_label.heightForWidth(text_width)
-        text_rect = self.task_label.fontMetrics().boundingRect(
-            0,
-            0,
-            text_width,
-            100000,
-            int(Qt.TextFlag.TextWordWrap),
-            self.task_text(),
-        )
-        text_height = max(label_height, text_rect.height())
-        return max(112, text_height + 82)
+    def preferred_height(self, available_width: int, max_height: int | None = None) -> int:
+        text_width = max(80, available_width - 44)
+        document = self.task_label.document().clone()
+        document.setTextWidth(text_width)
+        text_height = ceil(document.size().height()) + 10
+        natural_height = max(112, text_height + 82)
+        target_height = natural_height
+
+        if max_height is not None:
+            target_height = min(natural_height, max(140, max_height))
+
+        text_view_height = max(42, target_height - 82)
+        self.task_label.setFixedHeight(text_view_height)
+        if natural_height > target_height:
+            self.task_label.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        else:
+            self.task_label.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+        return target_height
 
     def _toggle_completed(self, is_checked: bool):
         font = self.task_label.font()
@@ -206,10 +220,21 @@ class ResultTaskWidget(QFrame):
 
 
 class SmoothResultListWidget(QListWidget):
+    viewport_resized = pyqtSignal()
+
     def __init__(self):
         super().__init__()
         self.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerPixel)
         self.verticalScrollBar().setSingleStep(8)
+        self._drag_scroll_step = 0
+        self._drag_scroll_margin = 64
+        self._drag_scroll_timer = QTimer(self)
+        self._drag_scroll_timer.setInterval(35)
+        self._drag_scroll_timer.timeout.connect(self._continue_drag_scroll)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.viewport_resized.emit()
 
     def wheelEvent(self, event):
         pixel_delta = event.pixelDelta().y()
@@ -227,6 +252,56 @@ class SmoothResultListWidget(QListWidget):
         scroll_bar.setValue(scroll_bar.value() - delta)
         event.accept()
 
+    def dragMoveEvent(self, event):
+        super().dragMoveEvent(event)
+        self._update_drag_scroll(event.position().toPoint().y())
+
+    def dragLeaveEvent(self, event):
+        self._stop_drag_scroll()
+        super().dragLeaveEvent(event)
+
+    def dropEvent(self, event):
+        self._stop_drag_scroll()
+        super().dropEvent(event)
+
+    def _update_drag_scroll(self, y_position: int):
+        step = self.drag_scroll_step_for_position(y_position)
+        if step == 0:
+            self._stop_drag_scroll()
+            return
+
+        self._drag_scroll_step = step
+        self._continue_drag_scroll()
+        if not self._drag_scroll_timer.isActive():
+            self._drag_scroll_timer.start()
+
+    def drag_scroll_step_for_position(self, y_position: int) -> int:
+        height = self.viewport().height()
+        if height <= 0:
+            return 0
+
+        margin = min(self._drag_scroll_margin, max(20, height // 3))
+        if y_position < margin:
+            distance = margin - max(0, y_position)
+            return -max(6, int(distance / margin * 28))
+        if y_position > height - margin:
+            distance = min(height, y_position) - (height - margin)
+            return max(6, int(distance / margin * 28))
+        return 0
+
+    def _continue_drag_scroll(self):
+        if self._drag_scroll_step == 0:
+            self._stop_drag_scroll()
+            return
+
+        scroll_bar = self.verticalScrollBar()
+        scroll_bar.setValue(scroll_bar.value() + self._drag_scroll_step)
+
+    def _stop_drag_scroll(self):
+        self._drag_scroll_step = 0
+        if self._drag_scroll_timer.isActive():
+            self._drag_scroll_timer.stop()
+
 
 class TaskSorterWindow(QWidget):
     result_completion_changed = pyqtSignal(int, bool)
@@ -238,6 +313,7 @@ class TaskSorterWindow(QWidget):
         super().__init__()
         self.setWindowTitle('Task Prioritization')
         self.setMinimumSize(820, 720)
+        self.current_theme_key = 'light'
         self.task_inputs = []
         self.result_items = []
         self._updating_result_list = False
@@ -258,6 +334,14 @@ class TaskSorterWindow(QWidget):
         self.title_label = QLabel('Interactive Task Prioritization')
         self.title_label.setObjectName('titleLabel')
         header_layout.addWidget(self.title_label, stretch=1)
+
+        self.theme_button = QPushButton()
+        self.theme_button.setObjectName('themeButton')
+        self.theme_button.setToolTip('Toggle light/dark theme')
+        self.theme_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.theme_button.setFixedSize(92, 34)
+        self.theme_button.clicked.connect(self.toggle_theme)
+        header_layout.addWidget(self.theme_button, alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop)
 
         self.help_button = QPushButton('?')
         self.help_button.setObjectName('helpButton')
@@ -369,6 +453,7 @@ class TaskSorterWindow(QWidget):
         self.result_list.setDropIndicatorShown(True)
         self.result_list.setAutoScroll(True)
         self.result_list.setAutoScrollMargin(36)
+        self.result_list.viewport_resized.connect(self.update_result_item_sizes)
         self.result_list.model().rowsMoved.connect(self._on_result_rows_moved)
         layout.addWidget(self.result_list)
 
@@ -399,21 +484,24 @@ class TaskSorterWindow(QWidget):
         layout.addLayout(result_buttons_layout)
 
     def _apply_styles(self):
+        colors = THEMES[self.current_theme_key].colors
+        self._sync_theme_button()
         self.setStyleSheet(
+            Template(
             """
             QWidget {
-                background: #f3f4f6;
-                color: #111827;
+                background: $background;
+                color: $text;
                 font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             }
             #titleLabel {
                 font-size: 26px;
                 font-weight: 700;
-                color: #111827;
+                color: $text;
             }
             #descriptionLabel {
                 font-size: 14px;
-                color: #4b5563;
+                color: $text_muted;
                 margin-bottom: 8px;
             }
             QScrollArea#taskInputArea {
@@ -421,26 +509,40 @@ class TaskSorterWindow(QWidget):
                 background: transparent;
             }
             QFrame#taskInputFrame {
-                border: 1px solid #d1d5db;
-                border-radius: 20px;
-                background: white;
+                border: 1px solid $border;
+                border-radius: 12px;
+                background: $surface;
                 padding: 0px;
             }
             QLabel#taskIndexLabel {
-                font-size: 13px;
+                background: $index_bg;
+                border: 1px solid $primary;
+                border-radius: 17px;
+                font-size: 12px;
                 font-weight: 700;
-                color: #2563eb;
+                color: $primary;
+            }
+            QTextEdit#taskInputTextEdit {
+                background: transparent;
+                color: $text;
+                border: none;
+                padding: 4px 2px;
+                font-size: 14px;
+                selection-background-color: $primary;
+                selection-color: $primary_text;
             }
             QTextEdit#taskTextEdit {
-                border: 1px solid #e2e8f0;
+                background: $surface_alt;
+                color: $text;
+                border: 1px solid $input_border;
                 border-radius: 14px;
                 padding: 12px;
                 font-size: 14px;
                 min-height: 120px;
             }
             QPushButton#primaryButton {
-                background: #2563eb;
-                color: white;
+                background: $primary;
+                color: $primary_text;
                 border: none;
                 border-radius: 16px;
                 font-size: 15px;
@@ -448,61 +550,67 @@ class TaskSorterWindow(QWidget):
                 padding: 0 24px;
             }
             QPushButton#primaryButton:hover {
-                background: #1d4ed8;
+                background: $primary_hover;
             }
             QPushButton#secondaryButton {
-                background: white;
-                color: #1f2937;
-                border: 1px solid #d1d5db;
+                background: $surface;
+                color: $text;
+                border: 1px solid $border;
                 border-radius: 16px;
                 font-size: 15px;
                 font-weight: 700;
                 padding: 0 22px;
             }
             QPushButton#secondaryButton:hover {
-                border-color: #93c5fd;
-                background: #f8fbff;
+                border-color: $primary_hover;
+                background: $secondary_hover;
             }
             QPushButton#smallActionButton {
-                background: #f8fafc;
-                color: #334155;
-                border: 1px solid #cbd5e1;
+                background: $surface_alt;
+                color: $text;
+                border: 1px solid $input_border;
                 border-radius: 8px;
                 font-size: 11px;
                 font-weight: 700;
                 padding: 0px;
             }
             QPushButton#smallActionButton:hover {
-                background: #eff6ff;
-                border-color: #93c5fd;
+                background: $index_bg;
+                border-color: $primary_hover;
             }
+            QPushButton#themeButton,
             QPushButton#helpButton {
-                background: white;
-                color: #1f2937;
-                border: 1px solid #d1d5db;
+                background: $surface;
+                color: $text;
+                border: 1px solid $border;
                 border-radius: 8px;
                 font-size: 16px;
                 font-weight: 800;
                 padding: 0px;
             }
+            QPushButton#themeButton {
+                font-size: 12px;
+                font-weight: 700;
+            }
+            QPushButton#themeButton:hover,
             QPushButton#helpButton:hover {
-                border-color: #93c5fd;
-                background: #eff6ff;
+                border-color: $primary_hover;
+                background: $index_bg;
             }
             QLabel#progressLabel {
                 font-size: 15px;
                 font-weight: 700;
-                color: #111827;
+                color: $text;
             }
             QLabel#questionLabel {
                 font-size: 18px;
                 font-weight: 700;
-                color: #111827;
+                color: $text;
             }
             QPushButton#comparisonButton {
-                background: white;
-                color: #111827;
-                border: 2px solid #dc2626;
+                background: $surface;
+                color: $text;
+                border: 2px solid $comparison_border;
                 border-radius: 20px;
                 font-size: 16px;
                 font-weight: 700;
@@ -510,10 +618,10 @@ class TaskSorterWindow(QWidget):
                 text-align: left;
             }
             QPushButton#comparisonButton:hover {
-                border-color: #f87171;
+                border-color: $comparison_hover;
             }
             QPushButton#comparisonButton:focus {
-                border-color: #16a34a;
+                border-color: $focus;
                 outline: none;
                 border-width: 3px;
             }
@@ -531,23 +639,25 @@ class TaskSorterWindow(QWidget):
             }
             QLabel#dragHandle {
                 background: transparent;
-                color: #94a3b8;
+                color: $drag_handle;
                 border: none;
                 font-size: 14px;
                 font-weight: 800;
             }
             QFrame#resultTaskFrame {
-                background: white;
-                border: 1px solid #d5dbe7;
+                background: $surface;
+                border: 1px solid $border;
                 border-radius: 12px;
             }
             QFrame#resultTaskDoneFrame {
-                background: #d1fae5;
-                border: 1px solid #10b981;
+                background: $done_surface;
+                border: 1px solid $done_border;
                 border-radius: 12px;
             }
             QFrame#resultTaskFrame QLabel#resultTaskLabel,
             QFrame#resultTaskDoneFrame QLabel#resultTaskLabel,
+            QFrame#resultTaskFrame QTextEdit#resultTaskLabel,
+            QFrame#resultTaskDoneFrame QTextEdit#resultTaskLabel,
             QFrame#resultTaskFrame QLabel#dragHandle,
             QFrame#resultTaskDoneFrame QLabel#dragHandle,
             QFrame#resultTaskFrame QCheckBox#doneCheckbox,
@@ -555,21 +665,39 @@ class TaskSorterWindow(QWidget):
                 background: transparent;
             }
             QLabel#resultIndexLabel {
-                background: #eff6ff;
-                border: 1px solid #bfdbfe;
+                background: $index_bg;
+                border: 1px solid $primary;
                 border-radius: 14px;
                 font-size: 13px;
                 font-weight: 700;
-                color: #2563eb;
+                color: $primary;
             }
-            QLabel#resultTaskLabel {
+            QTextEdit#resultTaskLabel {
+                border: none;
                 font-size: 15px;
-                color: #111827;
-                line-height: 1.45;
+                color: $text;
+                padding: 0px;
+                selection-background-color: $primary;
+                selection-color: $primary_text;
+            }
+            QTextEdit#resultTaskLabel QScrollBar:vertical {
+                background: transparent;
+                width: 10px;
+                margin: 0px;
+            }
+            QTextEdit#resultTaskLabel QScrollBar::handle:vertical {
+                background: $drag_handle;
+                border-radius: 5px;
+                min-height: 28px;
+            }
+            QTextEdit#resultTaskLabel QScrollBar::add-line:vertical,
+            QTextEdit#resultTaskLabel QScrollBar::sub-line:vertical {
+                height: 0px;
+                background: transparent;
             }
             QCheckBox#doneCheckbox {
                 background: transparent;
-                color: #374151;
+                color: $text_muted;
                 font-size: 12px;
                 font-weight: 700;
                 spacing: 6px;
@@ -577,19 +705,35 @@ class TaskSorterWindow(QWidget):
             QCheckBox#doneCheckbox::indicator {
                 width: 18px;
                 height: 18px;
-                border: 1px solid #94a3b8;
+                border: 1px solid $drag_handle;
                 border-radius: 5px;
-                background: white;
+                background: $surface;
             }
             QCheckBox#doneCheckbox::indicator:hover {
-                border-color: #2563eb;
+                border-color: $primary;
             }
             QCheckBox#doneCheckbox::indicator:checked {
-                background: #16a34a;
-                border-color: #15803d;
+                background: $focus;
+                border-color: $done_border;
             }
             """
+            ).substitute(colors)
         )
+
+    def _sync_theme_button(self):
+        if not hasattr(self, 'theme_button'):
+            return
+
+        if self.current_theme_key == 'dark':
+            self.theme_button.setText('Light')
+            self.theme_button.setToolTip('Switch to light theme')
+        else:
+            self.theme_button.setText('Dark')
+            self.theme_button.setToolTip('Switch to dark theme')
+
+    def toggle_theme(self):
+        self.current_theme_key = 'dark' if self.current_theme_key == 'light' else 'light'
+        self._apply_styles()
 
     def _setup_shortcuts(self):
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -825,8 +969,11 @@ class TaskSorterWindow(QWidget):
 
     def update_result_item_sizes(self):
         available_width = self.result_list.viewport().width()
+        max_item_height = max(160, self.result_list.viewport().height() - 16)
         for item, row_widget in self.result_items:
-            item.setSizeHint(QSize(0, row_widget.preferred_height(available_width) + 4))
+            target_height = row_widget.preferred_height(available_width, max_item_height)
+            row_widget.setFixedHeight(target_height)
+            item.setSizeHint(QSize(0, target_height + 4))
 
     def update_progress(self, current_step: int, total_steps: int):
         self.progress_label.setText(f'Comparison Step: {current_step} / {total_steps}')
@@ -896,21 +1043,24 @@ class TaskSorterWindow(QWidget):
 
     def show_shortcuts_help(self):
         shortcuts_text = self.shortcuts_help_text()
+        colors = THEMES[self.current_theme_key].colors
         msg = QMessageBox(self)
         msg.setWindowTitle('Keyboard Shortcuts')
         msg.setText(shortcuts_text)
         msg.setTextFormat(Qt.TextFormat.RichText)
         msg.setStyleSheet(
+            Template(
             """
             QMessageBox {
-                background: white;
+                background: $surface;
             }
             QMessageBox QLabel {
-                color: #111827;
+                color: $text;
+                background: $surface;
             }
             QMessageBox QPushButton {
-                background: #2563eb;
-                color: white;
+                background: $primary;
+                color: $primary_text;
                 border: none;
                 border-radius: 8px;
                 padding: 8px 20px;
@@ -918,9 +1068,10 @@ class TaskSorterWindow(QWidget):
                 min-width: 80px;
             }
             QMessageBox QPushButton:hover {
-                background: #1d4ed8;
+                background: $primary_hover;
             }
             """
+            ).substitute(colors)
         )
         msg.exec()
 

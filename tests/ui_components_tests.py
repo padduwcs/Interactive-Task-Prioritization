@@ -6,11 +6,27 @@ os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 from PyQt6.QtWidgets import QApplication, QAbstractItemView
 from PyQt6.QtCore import QModelIndex, Qt
 
-from ui_components import ResultTaskWidget, TaskSorterWindow
+from ui_components import ResultTaskWidget, SmoothResultListWidget, TaskInputWidget, TaskSorterWindow
 
 
 def get_app():
     return QApplication.instance() or QApplication([])
+
+
+class TaskInputWidgetTests(unittest.TestCase):
+    def setUp(self):
+        self.app = get_app()
+
+    def test_input_card_uses_compact_number_badge_and_borderless_editor(self):
+        widget = TaskInputWidget(3)
+
+        self.assertEqual(widget.index_label.text(), '3')
+        self.assertEqual(widget.index_label.width(), 34)
+        self.assertEqual(widget.index_label.height(), 34)
+        self.assertEqual(widget.text_edit.objectName(), 'taskInputTextEdit')
+
+        widget.text_edit.setPlainText('Task title\nMore detail')
+        self.assertEqual(widget.get_text(), 'Task title\nMore detail')
 
 
 class ResultTaskWidgetTests(unittest.TestCase):
@@ -35,6 +51,30 @@ class ResultTaskWidgetTests(unittest.TestCase):
         self.assertFalse(second.task_label.font().strikeOut())
         self.assertEqual(second.main_container.objectName(), 'resultTaskFrame')
 
+    def test_long_task_height_grows_when_available_width_shrinks(self):
+        long_task = 'Important task ' + ('with more details ' * 40)
+        widget = ResultTaskWidget(1, long_task)
+
+        wide_height = widget.preferred_height(700)
+        narrow_height = widget.preferred_height(180)
+
+        self.assertGreater(narrow_height, wide_height)
+
+
+class SmoothResultListWidgetTests(unittest.TestCase):
+    def setUp(self):
+        self.app = get_app()
+
+    def test_drag_near_viewport_edges_requests_scroll(self):
+        result_list = SmoothResultListWidget()
+        result_list.resize(320, 240)
+        self.app.processEvents()
+        viewport_height = result_list.viewport().height()
+
+        self.assertLess(result_list.drag_scroll_step_for_position(4), 0)
+        self.assertGreater(result_list.drag_scroll_step_for_position(viewport_height - 4), 0)
+        self.assertEqual(result_list.drag_scroll_step_for_position(viewport_height // 2), 0)
+
 
 class TaskSorterWindowTests(unittest.TestCase):
     def setUp(self):
@@ -45,6 +85,26 @@ class TaskSorterWindowTests(unittest.TestCase):
 
         self.assertEqual(window.help_button.text(), '?')
         self.assertEqual(window.help_button.toolTip(), 'Keyboard shortcuts (F1)')
+
+    def test_theme_button_toggles_light_and_dark_styles(self):
+        window = TaskSorterWindow()
+
+        self.assertEqual(window.current_theme_key, 'light')
+        self.assertEqual(window.theme_button.text(), 'Dark')
+        self.assertIn('#f7f8fa', window.styleSheet())
+
+        window.theme_button.click()
+        self.app.processEvents()
+
+        self.assertEqual(window.current_theme_key, 'dark')
+        self.assertEqual(window.theme_button.text(), 'Light')
+        self.assertIn('#111315', window.styleSheet())
+
+        window.theme_button.click()
+        self.app.processEvents()
+
+        self.assertEqual(window.current_theme_key, 'light')
+        self.assertEqual(window.theme_button.text(), 'Dark')
 
     def test_progress_and_help_text_use_enter_and_f1_labels(self):
         window = TaskSorterWindow()
@@ -126,6 +186,21 @@ class TaskSorterWindowTests(unittest.TestCase):
         self.app.processEvents()
 
         self.assertGreater(window.result_list.item(0).sizeHint().height(), 108)
+
+    def test_very_long_result_task_uses_internal_scroll_when_window_is_small(self):
+        window = TaskSorterWindow()
+        window.resize(820, 720)
+        window.show()
+        very_long_task = 'Important task ' + ('with more details ' * 260)
+
+        window.show_result_view([(0, very_long_task)], [False])
+        self.app.processEvents()
+
+        row_widget = window.result_list.itemWidget(window.result_list.item(0))
+        viewport_height = window.result_list.viewport().height()
+
+        self.assertLessEqual(row_widget.height(), viewport_height)
+        self.assertGreater(row_widget.task_label.verticalScrollBar().maximum(), 0)
 
 
 if __name__ == '__main__':
