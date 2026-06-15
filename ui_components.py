@@ -3,6 +3,7 @@
 from PyQt6.QtGui import QAction, QKeySequence
 from PyQt6.QtWidgets import (
     QApplication,
+    QAbstractItemView,
     QDialog,
     QDialogButtonBox,
     QWidget,
@@ -60,64 +61,110 @@ class TaskInputWidget(QFrame):
         self.text_edit.setFocus()
 
 
-class ResultTaskWidget(QWidget):
-    def __init__(self, sequence: int, task_text: str, is_done: bool = False):
+class DragHandle(QLabel):
+    drag_requested = pyqtSignal(object)
+
+    def __init__(self, row_widget):
+        super().__init__('::')
+        self.row_widget = row_widget
+        self._press_pos = None
+        self.setObjectName('dragHandle')
+        self.setToolTip('Drag to reorder')
+        self.setFixedSize(22, 28)
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setCursor(Qt.CursorShape.OpenHandCursor)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._press_pos = event.position().toPoint()
+            self.setCursor(Qt.CursorShape.ClosedHandCursor)
+            event.accept()
+            return
+
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._press_pos is None or not event.buttons() & Qt.MouseButton.LeftButton:
+            super().mouseMoveEvent(event)
+            return
+
+        distance = (event.position().toPoint() - self._press_pos).manhattanLength()
+        if distance >= QApplication.startDragDistance():
+            self._press_pos = None
+            self.drag_requested.emit(self.row_widget)
+            event.accept()
+            return
+
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        self._press_pos = None
+        self.setCursor(Qt.CursorShape.OpenHandCursor)
+        super().mouseReleaseEvent(event)
+
+
+class ResultTaskWidget(QFrame):
+    def __init__(self, sequence: int, task_text: str, is_done: bool = False, task_id: int | None = None):
         super().__init__()
+        self.task_id = task_id if task_id is not None else sequence - 1
         self._build_ui(sequence, task_text)
         if is_done:
             self.checkbox.setChecked(True)
 
     def _build_ui(self, sequence: int, task_text: str):
-        self.main_container = QWidget()
-        self.main_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+        self.main_container = self
+        self.setObjectName('resultTaskFrame')
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
         self._set_completed_style(False)
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(8, 6, 8, 6)
-        layout.addWidget(self.main_container)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 14, 16, 16)
+        layout.setSpacing(10)
 
-        container_layout = QHBoxLayout(self.main_container)
-        container_layout.setContentsMargins(12, 10, 12, 10)
-        container_layout.setSpacing(16)
+        header_layout = QHBoxLayout()
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(8)
+
+        self.drag_handle = DragHandle(self)
+        header_layout.addWidget(self.drag_handle)
 
         self.index_label = QLabel(str(sequence))
         self.index_label.setObjectName('resultIndexLabel')
-        self.index_label.setMaximumWidth(30)
-        container_layout.addWidget(self.index_label)
+        self.index_label.setFixedSize(30, 28)
+        self.index_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        header_layout.addWidget(self.index_label)
+        header_layout.addStretch()
+
+        self.copy_button = QPushButton('Copy')
+        self.copy_button.setObjectName('smallActionButton')
+        self.copy_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.copy_button.setFixedSize(58, 28)
+
+        self.edit_button = QPushButton('Edit')
+        self.edit_button.setObjectName('smallActionButton')
+        self.edit_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.edit_button.setFixedSize(52, 28)
+
+        self.checkbox = QCheckBox('Done')
+        self.checkbox.setObjectName('doneCheckbox')
+        self.checkbox.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.checkbox.setFixedHeight(28)
+        self.checkbox.setMinimumWidth(72)
+        self.checkbox.toggled.connect(self._toggle_completed)
+
+        header_layout.addWidget(self.copy_button)
+        header_layout.addWidget(self.edit_button)
+        header_layout.addWidget(self.checkbox)
+        layout.addLayout(header_layout)
 
         self.task_label = QLabel(task_text)
         self.task_label.setWordWrap(True)
         self.task_label.setObjectName('resultTaskLabel')
         self.task_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        self.task_label.setMinimumHeight(40)
         self.task_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
-        self.task_label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
-        container_layout.addWidget(self.task_label, stretch=1)
-
-        self.copy_button = QPushButton('Copy')
-        self.copy_button.setObjectName('smallActionButton')
-        self.copy_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.copy_button.setFixedHeight(34)
-        self.copy_button.setMinimumWidth(72)
-
-        self.edit_button = QPushButton('Edit')
-        self.edit_button.setObjectName('smallActionButton')
-        self.edit_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.edit_button.setFixedHeight(34)
-        self.edit_button.setMinimumWidth(72)
-
-        self.checkbox = QCheckBox('Done')
-        self.checkbox.setObjectName('doneCheckbox')
-        self.checkbox.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.checkbox.setMinimumWidth(86)
-        self.checkbox.toggled.connect(self._toggle_completed)
-
-        action_layout = QHBoxLayout()
-        action_layout.setContentsMargins(0, 0, 0, 0)
-        action_layout.setSpacing(8)
-        action_layout.addWidget(self.copy_button)
-        action_layout.addWidget(self.edit_button)
-        action_layout.addWidget(self.checkbox)
-        container_layout.addLayout(action_layout)
+        self.task_label.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        self.task_label.setContentsMargins(2, 0, 2, 0)
+        layout.addWidget(self.task_label)
 
     def task_text(self) -> str:
         return self.task_label.text()
@@ -125,8 +172,12 @@ class ResultTaskWidget(QWidget):
     def set_task_text(self, task_text: str):
         self.task_label.setText(task_text)
 
+    def set_sequence(self, sequence: int):
+        self.index_label.setText(str(sequence))
+
     def preferred_height(self, available_width: int) -> int:
-        text_width = max(180, available_width - 260)
+        text_width = max(220, available_width - 44)
+        label_height = self.task_label.heightForWidth(text_width)
         text_rect = self.task_label.fontMetrics().boundingRect(
             0,
             0,
@@ -135,7 +186,8 @@ class ResultTaskWidget(QWidget):
             int(Qt.TextFlag.TextWordWrap),
             self.task_text(),
         )
-        return max(82, text_rect.height() + 48)
+        text_height = max(label_height, text_rect.height())
+        return max(112, text_height + 82)
 
     def _toggle_completed(self, is_checked: bool):
         font = self.task_label.font()
@@ -146,18 +198,41 @@ class ResultTaskWidget(QWidget):
 
     def _set_completed_style(self, is_checked: bool):
         if is_checked:
-            self.main_container.setStyleSheet(
-                'background: #d1fae5; border: 1px solid #10b981; border-radius: 12px; padding: 0px;'
-            )
+            self.setObjectName('resultTaskDoneFrame')
         else:
-            self.main_container.setStyleSheet(
-                'background: white; border: 1px solid #cbd5e1; border-radius: 12px; padding: 0px;'
-            )
+            self.setObjectName('resultTaskFrame')
+        self.style().unpolish(self)
+        self.style().polish(self)
+
+
+class SmoothResultListWidget(QListWidget):
+    def __init__(self):
+        super().__init__()
+        self.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerPixel)
+        self.verticalScrollBar().setSingleStep(8)
+
+    def wheelEvent(self, event):
+        pixel_delta = event.pixelDelta().y()
+        angle_delta = event.angleDelta().y()
+
+        if pixel_delta:
+            delta = pixel_delta
+        elif angle_delta:
+            delta = int(angle_delta / 120 * 28)
+        else:
+            super().wheelEvent(event)
+            return
+
+        scroll_bar = self.verticalScrollBar()
+        scroll_bar.setValue(scroll_bar.value() - delta)
+        event.accept()
 
 
 class TaskSorterWindow(QWidget):
     result_completion_changed = pyqtSignal(int, bool)
     result_text_changed = pyqtSignal(int, str)
+    result_order_changed = pyqtSignal(list, list)
+    result_task_added = pyqtSignal(str)
 
     def __init__(self):
         super().__init__()
@@ -165,6 +240,7 @@ class TaskSorterWindow(QWidget):
         self.setMinimumSize(820, 720)
         self.task_inputs = []
         self.result_items = []
+        self._updating_result_list = False
         self._build_ui()
         self._apply_styles()
         self._setup_shortcuts()
@@ -281,16 +357,32 @@ class TaskSorterWindow(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(16)
 
-        self.result_list = QListWidget()
+        self.result_list = SmoothResultListWidget()
         self.result_list.setObjectName('resultList')
-        self.result_list.setSelectionMode(QListWidget.SelectionMode.NoSelection)
-        self.result_list.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerPixel)
+        self.result_list.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
+        self.result_list.setSpacing(10)
+        self.result_list.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
+        self.result_list.setDefaultDropAction(Qt.DropAction.MoveAction)
+        self.result_list.setDragDropOverwriteMode(False)
+        self.result_list.setDragEnabled(True)
+        self.result_list.setAcceptDrops(True)
+        self.result_list.setDropIndicatorShown(True)
+        self.result_list.setAutoScroll(True)
+        self.result_list.setAutoScrollMargin(36)
+        self.result_list.model().rowsMoved.connect(self._on_result_rows_moved)
         layout.addWidget(self.result_list)
 
         result_buttons_layout = QHBoxLayout()
         result_buttons_layout.setContentsMargins(0, 0, 0, 0)
         result_buttons_layout.setSpacing(12)
         result_buttons_layout.addStretch()
+
+        self.add_result_task_button = QPushButton('Add Task')
+        self.add_result_task_button.setObjectName('secondaryButton')
+        self.add_result_task_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.add_result_task_button.setFixedHeight(48)
+        self.add_result_task_button.clicked.connect(self.add_result_task)
+        result_buttons_layout.addWidget(self.add_result_task_button)
 
         self.copy_all_button = QPushButton('Copy All')
         self.copy_all_button.setObjectName('secondaryButton')
@@ -372,17 +464,17 @@ class TaskSorterWindow(QWidget):
                 background: #f8fbff;
             }
             QPushButton#smallActionButton {
-                background: #eff6ff;
-                color: #1f2937;
-                border: 1px solid #bfdbfe;
-                border-radius: 10px;
-                font-size: 12px;
+                background: #f8fafc;
+                color: #334155;
+                border: 1px solid #cbd5e1;
+                border-radius: 8px;
+                font-size: 11px;
                 font-weight: 700;
-                padding: 0 10px;
+                padding: 0px;
             }
             QPushButton#smallActionButton:hover {
-                background: #dbeafe;
-                border-color: #60a5fa;
+                background: #eff6ff;
+                border-color: #93c5fd;
             }
             QPushButton#helpButton {
                 background: white;
@@ -426,33 +518,67 @@ class TaskSorterWindow(QWidget):
                 border-width: 3px;
             }
             QListWidget#resultList {
+                background: transparent;
+                border: none;
+                padding: 2px;
+            }
+            QListWidget#resultList::item {
+                background: transparent;
+                border: none;
+            }
+            QListWidget#resultList::item:selected {
+                background: transparent;
+            }
+            QLabel#dragHandle {
+                background: transparent;
+                color: #94a3b8;
+                border: none;
+                font-size: 14px;
+                font-weight: 800;
+            }
+            QFrame#resultTaskFrame {
                 background: white;
-                border: 1px solid #e5e7eb;
-                border-radius: 20px;
-                padding: 10px;
+                border: 1px solid #d5dbe7;
+                border-radius: 12px;
+            }
+            QFrame#resultTaskDoneFrame {
+                background: #d1fae5;
+                border: 1px solid #10b981;
+                border-radius: 12px;
+            }
+            QFrame#resultTaskFrame QLabel#resultTaskLabel,
+            QFrame#resultTaskDoneFrame QLabel#resultTaskLabel,
+            QFrame#resultTaskFrame QLabel#dragHandle,
+            QFrame#resultTaskDoneFrame QLabel#dragHandle,
+            QFrame#resultTaskFrame QCheckBox#doneCheckbox,
+            QFrame#resultTaskDoneFrame QCheckBox#doneCheckbox {
+                background: transparent;
             }
             QLabel#resultIndexLabel {
-                font-size: 14px;
+                background: #eff6ff;
+                border: 1px solid #bfdbfe;
+                border-radius: 14px;
+                font-size: 13px;
                 font-weight: 700;
                 color: #2563eb;
-                min-width: 24px;
             }
             QLabel#resultTaskLabel {
                 font-size: 15px;
                 color: #111827;
+                line-height: 1.45;
             }
             QCheckBox#doneCheckbox {
                 background: transparent;
                 color: #374151;
-                font-size: 13px;
+                font-size: 12px;
                 font-weight: 700;
-                spacing: 8px;
+                spacing: 6px;
             }
             QCheckBox#doneCheckbox::indicator {
-                width: 22px;
-                height: 22px;
-                border: 2px solid #6b7280;
-                border-radius: 6px;
+                width: 18px;
+                height: 18px;
+                border: 1px solid #94a3b8;
+                border-radius: 5px;
                 background: white;
             }
             QCheckBox#doneCheckbox::indicator:hover {
@@ -555,6 +681,7 @@ class TaskSorterWindow(QWidget):
         self.comparison_widget.setVisible(False)
         self.input_widget.setVisible(False)
         self.result_widget.setVisible(True)
+        self._updating_result_list = True
         self.result_list.clear()
         self.result_items = []
         done_states = done_states or []
@@ -562,13 +689,12 @@ class TaskSorterWindow(QWidget):
         for sequence, task in enumerate(sorted_tasks, start=1):
             result_index = sequence - 1
             is_done = bool(done_states[result_index]) if result_index < len(done_states) else False
-            row_widget = ResultTaskWidget(sequence, task[1], is_done)
+            row_widget = ResultTaskWidget(sequence, task[1], is_done, task[0])
+            row_widget.drag_handle.drag_requested.connect(self.start_result_drag)
             row_widget.copy_button.clicked.connect(lambda _, row=row_widget: self.copy_result_task(row))
-            row_widget.edit_button.clicked.connect(
-                lambda _, index=result_index, row=row_widget: self.edit_result_task(index, row)
-            )
+            row_widget.edit_button.clicked.connect(lambda _, row=row_widget: self.edit_result_task(row))
             row_widget.checkbox.toggled.connect(
-                lambda checked, index=result_index: self.result_completion_changed.emit(index, checked)
+                lambda checked, row=row_widget: self._emit_completion_changed(row, checked)
             )
             item = QListWidgetItem(self.result_list)
             self.result_list.addItem(item)
@@ -577,6 +703,7 @@ class TaskSorterWindow(QWidget):
 
         self.update_result_item_sizes()
         QTimer.singleShot(0, self.update_result_item_sizes)
+        self._updating_result_list = False
         
         if self.result_list.count() > 0:
             self.result_list.scrollToTop()
@@ -584,16 +711,42 @@ class TaskSorterWindow(QWidget):
     def copy_result_task(self, row_widget: ResultTaskWidget):
         QApplication.clipboard().setText(row_widget.task_text())
 
+    def start_result_drag(self, row_widget: ResultTaskWidget):
+        index = self.index_for_row_widget(row_widget)
+        if index is None:
+            return
+
+        self.result_list.setCurrentRow(index)
+        self.result_list.startDrag(Qt.DropAction.MoveAction)
+
     def copy_all_results(self):
         task_texts = []
-        for index, (_, row_widget) in enumerate(self.result_items, start=1):
+        for index, row_widget in enumerate(self.current_result_rows(), start=1):
             task_texts.append(f'{index}. {row_widget.task_text()}')
 
         QApplication.clipboard().setText('\n\n'.join(task_texts))
 
-    def edit_result_task(self, index: int, row_widget: ResultTaskWidget):
+    def add_result_task(self):
+        task_text = self.prompt_result_task_text('Add Task')
+        if task_text is not None:
+            self.result_task_added.emit(task_text)
+
+    def edit_result_task(self, row_widget: ResultTaskWidget):
+        index = self.index_for_row_widget(row_widget)
+        if index is None:
+            return
+
+        updated_text = self.prompt_result_task_text('Edit Task', row_widget.task_text())
+        if updated_text is None:
+            return
+
+        row_widget.set_task_text(updated_text)
+        self.result_text_changed.emit(index, updated_text)
+        self.update_result_item_sizes()
+
+    def prompt_result_task_text(self, title: str, initial_text: str = '') -> str | None:
         dialog = QDialog(self)
-        dialog.setWindowTitle('Edit Task')
+        dialog.setWindowTitle(title)
         dialog.setMinimumSize(520, 360)
 
         layout = QVBoxLayout(dialog)
@@ -601,7 +754,7 @@ class TaskSorterWindow(QWidget):
         layout.setSpacing(12)
 
         text_edit = QTextEdit()
-        text_edit.setPlainText(row_widget.task_text())
+        text_edit.setPlainText(initial_text)
         text_edit.setObjectName('taskTextEdit')
         layout.addWidget(text_edit)
 
@@ -616,16 +769,64 @@ class TaskSorterWindow(QWidget):
         updated_text = text_edit.toPlainText().strip()
         if not updated_text:
             QMessageBox.warning(self, 'Task is empty', 'Please keep at least some content for this task.')
+            return None
+
+        return updated_text
+
+    def current_result_rows(self) -> list[ResultTaskWidget]:
+        rows = []
+        for row in range(self.result_list.count()):
+            row_widget = self.result_list.itemWidget(self.result_list.item(row))
+            if row_widget is not None:
+                rows.append(row_widget)
+        return rows
+
+    def current_result_tasks_and_done_states(self):
+        tasks = []
+        done_states = []
+        for row_widget in self.current_result_rows():
+            tasks.append((row_widget.task_id, row_widget.task_text()))
+            done_states.append(row_widget.checkbox.isChecked())
+        return tasks, done_states
+
+    def index_for_row_widget(self, target_widget: ResultTaskWidget) -> int | None:
+        for row, row_widget in enumerate(self.current_result_rows()):
+            if row_widget is target_widget:
+                return row
+        return None
+
+    def _emit_completion_changed(self, row_widget: ResultTaskWidget, is_done: bool):
+        index = self.index_for_row_widget(row_widget)
+        if index is not None:
+            self.result_completion_changed.emit(index, is_done)
+
+    def _on_result_rows_moved(self, *args):
+        if not self._updating_result_list:
+            QTimer.singleShot(0, self._emit_result_order_changed)
+
+    def _emit_result_order_changed(self):
+        if self._updating_result_list:
             return
 
-        row_widget.set_task_text(updated_text)
-        self.result_text_changed.emit(index, updated_text)
+        self.sync_result_items_from_list()
+        tasks, done_states = self.current_result_tasks_and_done_states()
+        self.result_order_changed.emit(tasks, done_states)
+
+    def sync_result_items_from_list(self):
+        self.result_items = []
+        for row in range(self.result_list.count()):
+            item = self.result_list.item(row)
+            row_widget = self.result_list.itemWidget(item)
+            if row_widget is None:
+                continue
+            row_widget.set_sequence(row + 1)
+            self.result_items.append((item, row_widget))
         self.update_result_item_sizes()
 
     def update_result_item_sizes(self):
         available_width = self.result_list.viewport().width()
         for item, row_widget in self.result_items:
-            item.setSizeHint(QSize(0, row_widget.preferred_height(available_width)))
+            item.setSizeHint(QSize(0, row_widget.preferred_height(available_width) + 4))
 
     def update_progress(self, current_step: int, total_steps: int):
         self.progress_label.setText(f'Comparison Step: {current_step} / {total_steps}')
@@ -681,6 +882,8 @@ class TaskSorterWindow(QWidget):
 • <b>Enter</b> - Select focused task<br>
 <br>
 <b>Result View:</b><br>
+• <b>Drag tasks</b> - Manually reorder the sorted list<br>
+• <b>Add Task</b> - Add a task to the result list<br>
 • <b>Click checkbox</b> - Mark task as done (green highlight)<br>
 • <b>Copy</b> - Copy one task<br>
 • <b>Edit</b> - Edit one task and save it automatically<br>

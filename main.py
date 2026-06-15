@@ -42,6 +42,8 @@ class TaskSorterApp:
         self.window.button_b.clicked.connect(lambda: self._on_task_chosen(self.window.button_b.task))
         self.window.result_completion_changed.connect(self._on_result_completion_changed)
         self.window.result_text_changed.connect(self._on_result_text_changed)
+        self.window.result_order_changed.connect(self._on_result_order_changed)
+        self.window.result_task_added.connect(self._on_result_task_added)
 
     def _on_start_sort(self):
         tasks = self.window.gather_tasks()
@@ -105,6 +107,18 @@ class TaskSorterApp:
 
         original_index = self.result_tasks[index][0]
         self.result_tasks[index] = (original_index, task_text)
+        self.state_store.save_result(self.result_tasks, self.result_done_states)
+
+    def _on_result_order_changed(self, tasks: list[tuple[int, str]], done_states: list[bool]):
+        self.result_tasks = list(tasks)
+        self.result_done_states = list(done_states)
+        self.state_store.save_result(self.result_tasks, self.result_done_states)
+
+    def _on_result_task_added(self, task_text: str):
+        next_task_id = max((task[0] for task in self.result_tasks), default=-1) + 1
+        self.result_tasks.append((next_task_id, task_text))
+        self.result_done_states.append(False)
+        self.window.show_result_view(self.result_tasks, self.result_done_states)
         self.state_store.save_result(self.result_tasks, self.result_done_states)
 
     def _show_result(self, sorted_tasks: list[tuple[int, str]], done_states: list[bool] | None = None, persist: bool = True):

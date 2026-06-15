@@ -3,7 +3,8 @@ import unittest
 
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QAbstractItemView
+from PyQt6.QtCore import QModelIndex, Qt
 
 from ui_components import ResultTaskWidget, TaskSorterWindow
 
@@ -26,12 +27,13 @@ class ResultTaskWidgetTests(unittest.TestCase):
         self.assertTrue(first.checkbox.isChecked())
         self.assertIn('✓', first.checkbox.text())
         self.assertTrue(first.task_label.font().strikeOut())
-        self.assertIn('border: 1px solid #10b981', first.main_container.styleSheet())
+        self.assertEqual(first.main_container.objectName(), 'resultTaskDoneFrame')
+        self.assertTrue(first.testAttribute(Qt.WidgetAttribute.WA_StyledBackground))
 
         self.assertFalse(second.checkbox.isChecked())
         self.assertNotIn('✓', second.checkbox.text())
         self.assertFalse(second.task_label.font().strikeOut())
-        self.assertIn('border: 1px solid #cbd5e1', second.main_container.styleSheet())
+        self.assertEqual(second.main_container.objectName(), 'resultTaskFrame')
 
 
 class TaskSorterWindowTests(unittest.TestCase):
@@ -82,6 +84,7 @@ class TaskSorterWindowTests(unittest.TestCase):
         self.app.processEvents()
 
         first_widget = window.result_list.itemWidget(window.result_list.item(0))
+        self.assertEqual(first_widget.drag_handle.toolTip(), 'Drag to reorder')
         self.assertEqual(first_widget.copy_button.text(), 'Copy')
         self.assertEqual(first_widget.edit_button.text(), 'Edit')
         self.assertEqual(window.copy_all_button.text(), 'Copy All')
@@ -93,6 +96,28 @@ class TaskSorterWindowTests(unittest.TestCase):
         window.copy_all_button.click()
         self.assertEqual(self.app.clipboard().text(), '1. First task\n\n2. Second task\nWith details')
 
+    def test_result_list_supports_manual_reordering_and_smooth_scrolling(self):
+        window = TaskSorterWindow()
+
+        self.assertEqual(window.result_list.selectionMode(), QAbstractItemView.SelectionMode.SingleSelection)
+        self.assertEqual(window.result_list.dragDropMode(), QAbstractItemView.DragDropMode.InternalMove)
+        self.assertEqual(window.result_list.defaultDropAction(), Qt.DropAction.MoveAction)
+        self.assertEqual(window.result_list.verticalScrollBar().singleStep(), 8)
+
+    def test_manual_reorder_updates_sequence_and_emits_current_order(self):
+        window = TaskSorterWindow()
+        events = []
+        window.result_order_changed.connect(lambda tasks, done: events.append((tasks, done)))
+        window.show_result_view([(0, 'First task'), (1, 'Second task'), (2, 'Third task')], [False, True, False])
+        self.app.processEvents()
+
+        self.assertTrue(window.result_list.model().moveRow(QModelIndex(), 2, QModelIndex(), 0))
+        self.app.processEvents()
+
+        self.assertEqual([row.task_text() for row in window.current_result_rows()], ['Third task', 'First task', 'Second task'])
+        self.assertEqual([row.index_label.text() for row in window.current_result_rows()], ['1', '2', '3'])
+        self.assertEqual(events[-1], ([(2, 'Third task'), (0, 'First task'), (1, 'Second task')], [False, False, True]))
+
     def test_result_items_expand_for_long_content(self):
         window = TaskSorterWindow()
         long_task = 'Important task ' + ('with more details ' * 40)
@@ -100,7 +125,7 @@ class TaskSorterWindowTests(unittest.TestCase):
         window.show_result_view([(0, long_task)], [False])
         self.app.processEvents()
 
-        self.assertGreater(window.result_list.item(0).sizeHint().height(), 82)
+        self.assertGreater(window.result_list.item(0).sizeHint().height(), 108)
 
 
 if __name__ == '__main__':

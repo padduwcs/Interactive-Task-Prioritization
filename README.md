@@ -14,6 +14,7 @@ A modern desktop application for prioritizing tasks using an interactive merge s
 - **Independent Completion Tracking**: Mark any result task as done in any order
 - **Persistent Results**: Keep the sorted list and completion state between app launches
 - **Result Actions**: Copy one task, edit task details, or copy the full prioritized list
+- **Manual Result Editing**: Drag tasks to reorder them or add new tasks after sorting
 - **Auto-scroll**: Smooth scrolling for long task lists
 - **Help Dialog**: Compact help button and keyboard shortcut reference
 
@@ -66,6 +67,8 @@ conda run -n deskApp python main.py
 - **Enter**: Select focused task
 
 ### Result View
+- **Drag tasks**: Manually reorder the sorted list
+- **Add Task**: Add a new task directly to the result list
 - **Click checkbox**: Mark task as done (green highlight)
 - **Copy**: Copy one task
 - **Edit**: Update one task's content/details
