@@ -1,136 +1,177 @@
-# Interactive Task Prioritization
+# First Things First
 
-A modern desktop application for prioritizing tasks using an interactive merge sort algorithm. Built with Python and PyQt6.
+A desktop app for prioritizing tasks through an interactive merge sort workflow. Add your tasks, compare them two at a time, and get a sorted priority list that can be edited, reordered, copied, and marked as done.
+
+Built with Python and PyQt6.
 
 ## Features
 
-- **Multi-line Task Input**: Add tasks with descriptions directly in the GUI
-- **Interactive Merge Sort**: Algorithmically efficient O(n log n) sorting with user comparisons
-- **Keyboard Shortcuts**: Full keyboard navigation for sorting and comparison
-- **Visual Feedback**: 
-  - Green highlight for completed tasks
-  - Strikethrough text for done items
-  - Progress indicator during sorting
-- **Independent Completion Tracking**: Mark any result task as done in any order
-- **Persistent Results**: Keep the sorted list and completion state between app launches
-- **Result Actions**: Copy one task, edit task details, or copy the full prioritized list
-- **Manual Result Editing**: Drag tasks to reorder them or add new tasks after sorting
-- **Auto-scroll**: Smooth scrolling for long task lists
-- **Help Dialog**: Compact help button and keyboard shortcut reference
+- Multi-line task input with optional descriptions
+- Interactive merge sort with O(n log n) comparison complexity
+- Keyboard navigation for sorting and comparison
+- Progress indicator while sorting
+- Persistent sorted results between app launches
+- Completion checkboxes with visual done states
+- Copy, edit, reorder, and add tasks directly in the result list
+- Copy the full prioritized list as numbered text
+- Help dialog with keyboard shortcuts
 
-## Installation
+## Requirements
 
-### Requirements
-- Python 3.10+
-- PyQt6
+- Python 3.10 or newer
+- pip
 
-### Setup
+Runtime Python dependencies are listed in `requirements.txt`.
 
-1. Clone the repository:
+## Setup
+
+Clone the repository:
+
 ```bash
 git clone https://github.com/padduwcs/Interactive-Task-Prioritization.git
-cd "First Things First"
+cd Interactive-Task-Prioritization
 ```
 
-2. Create a conda environment (recommended):
+Create and activate a Python environment. Any standard Python environment manager works.
+
+Using `venv`:
+
 ```bash
-conda create -n deskApp python=3.12
-conda activate deskApp
+python -m venv .venv
 ```
 
-3. Install dependencies:
+Windows PowerShell:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+macOS/Linux:
+
 ```bash
-pip install -r requirements.txt
+source .venv/bin/activate
 ```
 
-## Usage
+Or using conda:
 
-Run the application:
+```bash
+conda create -n first-things-first python=3.12
+conda activate first-things-first
+```
+
+Install dependencies:
+
+```bash
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
+
+## Run
+
 ```bash
 python main.py
 ```
 
-Or if using conda:
-```bash
-conda run -n deskApp python main.py
-```
+If you are using conda, activate the environment first, then run the same command.
 
 ## Keyboard Shortcuts
 
-### Input View
-- **Ctrl+N**: Add new task
-- **Ctrl+Enter**: Start sorting
+Input view:
 
-### Comparison View
-- **Left Arrow**: Focus left button
-- **Right Arrow**: Focus right button
-- **Enter**: Select focused task
+- `Ctrl+N`: Add a new task
+- `Ctrl+Enter`: Start sorting
 
-### Result View
-- **Drag tasks**: Manually reorder the sorted list
-- **Add Task**: Add a new task directly to the result list
-- **Click checkbox**: Mark task as done (green highlight)
-- **Copy**: Copy one task
-- **Edit**: Update one task's content/details
-- **Copy All**: Copy every task as a numbered list
-- **Restart button**: Go back to input view
+Comparison view:
 
-Sorted results and checkbox states are saved automatically. The next app launch opens the saved result list. Use **Restart** to clear the saved state and start over.
+- `Left Arrow`: Focus the left task
+- `Right Arrow`: Focus the right task
+- `Enter`: Select the focused task
 
-### Global
-- **F1**: Show keyboard shortcuts help
-- **? button**: Show keyboard shortcuts help
+Result view:
+
+- Drag tasks to manually reorder the sorted list
+- Click a checkbox to mark a task as done
+- Use `Copy` to copy one task
+- Use `Edit` to update one task
+- Use `Copy All` to copy the full numbered list
+- Use `Add Task` to append a task after sorting
+- Use `Restart` to clear the saved result and start over
+
+Global:
+
+- `F1`: Show keyboard shortcut help
+- `?` button: Show keyboard shortcut help
+
+## Saved State
+
+Sorted results and checkbox states are saved automatically. On the next launch, the app opens the saved result list.
+
+Default state location:
+
+- Windows: `%APPDATA%\First Things First\task_state.json`
+- macOS/Linux: `~/.first-things-first/task_state.json`
 
 ## Tests
 
 Run the unit tests:
+
 ```bash
 python -m unittest discover -s tests -p "*_tests.py"
 ```
 
-## Build Windows App
+For headless environments, set Qt to offscreen mode before running tests.
 
-Build the desktop app executable with the bundled icon:
+Windows PowerShell:
+
+```powershell
+$env:QT_QPA_PLATFORM = "offscreen"
+python -m unittest discover -s tests -p "*_tests.py"
+```
+
+macOS/Linux:
+
 ```bash
+QT_QPA_PLATFORM=offscreen python -m unittest discover -s tests -p "*_tests.py"
+```
+
+## Build Windows Executable
+
+Building an executable is optional and requires PyInstaller:
+
+```bash
+python -m pip install pyinstaller
 pyinstaller "First Things First.spec"
 ```
 
 The executable is generated at:
+
 ```text
 dist/First Things First/First Things First.exe
 ```
 
 ## Project Structure
 
-```
+```text
 .
-├── main.py              # Application entry point and logic controller
-├── ui_components.py     # PyQt6 UI components and widgets
-├── sorter_logic.py      # Interactive merge sort generator algorithm
-├── First Things First.spec # PyInstaller Windows build configuration
-├── requirements.txt     # Runtime Python dependencies
-├── tests/               # Unit tests for core logic
-└── README.md            # This file
+|-- main.py                   # Application entry point and logic controller
+|-- ui_components.py          # PyQt6 UI components and widgets
+|-- sorter_logic.py           # Interactive merge sort generator algorithm
+|-- state_store.py            # Local persistence for sorted results
+|-- First Things First.spec   # PyInstaller Windows build configuration
+|-- requirements.txt          # Runtime Python dependencies
+|-- tests/                    # Unit tests
+`-- README.md                 # Project documentation
 ```
 
 ## Algorithm
 
-The application uses an **Interactive Merge Sort** algorithm that:
+The app uses an interactive merge sort algorithm that:
+
 - Yields comparison pairs to the user interface
-- Receives user choices via generator.send()
+- Receives user choices through `generator.send()`
 - Minimizes comparisons with O(n log n) complexity
-- Maintains non-blocking UI through generator-based control flow
-
-## Technical Highlights
-
-- **Generator-based sorting**: Non-blocking UI with coroutine pattern
-- **Modern PyQt6 UI**: Responsive, accessible interface with custom widgets
-- **Professional code structure**: Separation of concerns with dedicated modules
+- Keeps the UI responsive through generator-based control flow
 
 ## License
 
 MIT
-
-## Author
-
-Developer
