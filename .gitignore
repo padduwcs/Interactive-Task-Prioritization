@@ -5,6 +5,9 @@ __pycache__/
 *.so
 .Python
 *.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
 dist/
 build/
 
@@ -29,6 +32,8 @@ Thumbs.db
 # PyQt
 *.qmlc
 
-# Test files
-test_*.py
+# Test artifacts
 tests/.tmp_state/
+
+# Logs
+*.log

@@ -1,4 +1,5 @@
 import json
+import shutil
 import unittest
 import uuid
 from pathlib import Path
@@ -13,6 +14,9 @@ TEST_STATE_DIR = WORKSPACE_ROOT / 'tests' / '.tmp_state'
 class TaskStateStoreTests(unittest.TestCase):
     def setUp(self):
         TEST_STATE_DIR.mkdir(parents=True, exist_ok=True)
+
+    def tearDown(self):
+        shutil.rmtree(TEST_STATE_DIR, ignore_errors=True)
 
     def state_path(self, name: str) -> Path:
         return TEST_STATE_DIR / f'{uuid.uuid4().hex}_{name}'
